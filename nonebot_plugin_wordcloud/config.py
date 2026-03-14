@@ -40,6 +40,8 @@ class Config(BaseModel):
             values["wordcloud_font_path"] = str(
                 Path(__file__).parent / "SourceHanSans.otf"
             )
+        if not values.get("wordcloud_stopwords_path"):
+            values["wordcloud_stopwords_path"] = Path(__file__).parent / "stopword.txt"
 
         default_schedule_time = (
             time.fromisoformat(wordcloud_default_schedule_time)
