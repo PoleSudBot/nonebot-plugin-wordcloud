@@ -1,3 +1,4 @@
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -56,3 +57,15 @@ async def test_default_schedule_time_with_timezone(
     default_time = config.wordcloud_default_schedule_time
     assert default_time.isoformat() == "20:00:00"
     assert default_time.tzinfo == ZoneInfo("Asia/Tokyo")
+
+
+async def test_default_stopwords_path(app: App):
+    """测试默认停用词表路径"""
+    from nonebot_plugin_wordcloud import config as config_module
+    from nonebot_plugin_wordcloud.config import Config
+
+    config = type_validate_python(Config, {})
+
+    assert config.wordcloud_stopwords_path == (
+        Path(config_module.__file__).parent / "stopword.txt"
+    )

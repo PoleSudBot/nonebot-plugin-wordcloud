@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Optional
 from zoneinfo import ZoneInfo
 
@@ -75,6 +75,34 @@ class Scheduler:
                         f"已添加每日词云定时发送任务，发送时间：{time_str} UTC"
                     )
 
+    @staticmethod
+    def get_summary_ranges(dt: datetime) -> list[tuple[str, datetime, datetime]]:
+        """获取当前时刻需要生成的定时总结范围"""
+        day_start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        ranges = [("今日词云总结", day_start, dt)]
+
+        if dt.weekday() == 6:
+            week_start = day_start - timedelta(days=dt.weekday())
+            ranges.append(("本周词云总结", week_start, dt))
+
+        tomorrow = dt + timedelta(days=1)
+        if tomorrow.month != dt.month:
+            month_start = day_start.replace(day=1)
+            ranges.append(("本月词云总结", month_start, dt))
+
+        if tomorrow.year != dt.year:
+            year_start = day_start.replace(month=1, day=1)
+            ranges.append(("本年词云总结", year_start, dt))
+
+        return ranges
+
+    @staticmethod
+    def build_summary_message(title: str, image: bytes | None) -> saa.MessageFactory:
+        """构造定时总结消息"""
+        if image:
+            return saa.MessageFactory([saa.Text(f"{title}\n"), saa.Image(image)])
+        return saa.MessageFactory(f"{title}\n没有足够的数据生成词云")
+
     async def run_task(self, time: Optional[time] = None):
         """执行定时任务
 
@@ -89,30 +117,26 @@ class Scheduler:
             if time and not schedules:
                 self.schedules.pop(time.isoformat()).remove()
                 return
-            logger.info(f"开始发送每日词云，时间为 {time or '默认时间'}")
+            logger.info(f"开始发送词云定时总结，时间为 {time or '默认时间'}")
             for schedule in schedules:
                 target = schedule.saa_target
                 dt = get_datetime_now_with_timezone()
-                start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-                stop = dt
-                messages = await get_messages_plain_text(
-                    target=target,
-                    types=["message"],
-                    time_start=start,
-                    time_stop=stop,
-                    exclude_user_ids=plugin_config.wordcloud_exclude_user_ids,
-                )
                 mask_key = get_mask_key(target)
+                for title, start, stop in self.get_summary_ranges(dt):
+                    messages = await get_messages_plain_text(
+                        target=target,
+                        types=["message"],
+                        time_start=start,
+                        time_stop=stop,
+                        exclude_user_ids=plugin_config.wordcloud_exclude_user_ids,
+                    )
+                    image = await get_wordcloud(messages, mask_key)
+                    msg = self.build_summary_message(title, image)
 
-                if image := await get_wordcloud(messages, mask_key):
-                    msg = saa.Image(image)
-                else:
-                    msg = saa.Text("今天没有足够的数据生成词云")
-
-                try:
-                    await msg.send_to(target)
-                except Exception:
-                    logger.exception(f"{target} 发送词云失败")
+                    try:
+                        await msg.send_to(target)
+                    except Exception:
+                        logger.exception(f"{target} 发送 {title} 失败")
 
     async def get_schedule(self, target: saa.PlatformTarget) -> Optional[time]:
         """获取定时任务时间"""

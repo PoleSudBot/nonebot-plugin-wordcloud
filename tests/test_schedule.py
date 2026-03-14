@@ -1,5 +1,6 @@
-from datetime import time
+from datetime import datetime, time, timedelta
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 from nonebot import get_adapter, get_driver
 from nonebot.adapters.onebot.v11 import Adapter, Bot, Message
@@ -17,6 +18,14 @@ from .utils import (
     fake_group_message_event_v12,
     fake_private_message_event_v11,
 )
+
+
+def schedule_summary_message(title: str, image: BytesIO | None = None):
+    from nonebot_plugin_saa import Image, MessageFactory, Text
+
+    if image is None:
+        return MessageFactory(Text(f"{title}\n没有足够的数据生成词云"))
+    return MessageFactory([Text(f"{title}\n"), Image(image)])
 
 
 async def test_enable_schedule(app: App):
@@ -222,7 +231,7 @@ async def test_schedule_status(app: App):
 
 
 async def test_run_task_group(app: App, mocker: MockerFixture):
-    from nonebot_plugin_saa import Image, MessageFactory, TargetQQGroup
+    from nonebot_plugin_saa import TargetQQGroup
 
     from nonebot_plugin_wordcloud import schedule_service
 
@@ -240,7 +249,9 @@ async def test_run_task_group(app: App, mocker: MockerFixture):
 
     async with app.test_api() as ctx:
         bot = ctx.create_bot(base=Bot)
-        should_send_saa(ctx, MessageFactory(Image(image)), bot, target=target)
+        should_send_saa(
+            ctx, schedule_summary_message("今日词云总结", image), bot, target=target
+        )
         await schedule_service.run_task()
 
     mocked_get_messages_plain_text.assert_called_once()
@@ -258,7 +269,9 @@ async def test_run_task_group(app: App, mocker: MockerFixture):
 
     async with app.test_api() as ctx:
         bot = ctx.create_bot(base=BotV12, platform="qq", impl="test")
-        should_send_saa(ctx, MessageFactory(Image(image)), bot, target=target)
+        should_send_saa(
+            ctx, schedule_summary_message("今日词云总结", image), bot, target=target
+        )
         await schedule_service.run_task()
 
     mocked_get_messages_plain_text_v12.assert_called_once()
@@ -268,7 +281,7 @@ async def test_run_task_group(app: App, mocker: MockerFixture):
 
 
 async def test_run_task_channel(app: App, mocker: MockerFixture):
-    from nonebot_plugin_saa import Image, MessageFactory, TargetQQGuildChannel
+    from nonebot_plugin_saa import TargetQQGuildChannel
 
     from nonebot_plugin_wordcloud import schedule_service
 
@@ -286,7 +299,9 @@ async def test_run_task_channel(app: App, mocker: MockerFixture):
 
     async with app.test_api() as ctx:
         bot = ctx.create_bot(base=BotV12, impl="test", platform="qqguild")
-        should_send_saa(ctx, MessageFactory(Image(image)), bot, target=target)
+        should_send_saa(
+            ctx, schedule_summary_message("今日词云总结", image), bot, target=target
+        )
         await schedule_service.run_task()
 
     mocked_get_messages_plain_text.assert_called_once()
@@ -296,7 +311,7 @@ async def test_run_task_channel(app: App, mocker: MockerFixture):
 
 
 async def test_run_task_without_data(app: App, mocker: MockerFixture):
-    from nonebot_plugin_saa import MessageFactory, TargetQQGroup, Text
+    from nonebot_plugin_saa import TargetQQGroup
 
     from nonebot_plugin_wordcloud import schedule_service
 
@@ -313,13 +328,98 @@ async def test_run_task_without_data(app: App, mocker: MockerFixture):
 
     async with app.test_api() as ctx:
         bot = ctx.create_bot(base=Bot)
-        should_send_saa(
-            ctx, MessageFactory(Text("今天没有足够的数据生成词云")), bot, target=target
-        )
+        should_send_saa(ctx, schedule_summary_message("今日词云总结"), bot, target=target)
         await schedule_service.run_task()
 
     mocked_get_messages_plain_text.assert_called_once()
     mocked_get_wordcloud.assert_called_once_with(["test"], "qq_group-group_id=10000")
+
+
+async def test_run_task_period_end_summaries(app: App, mocker: MockerFixture):
+    from nonebot_plugin_saa import TargetQQGroup
+
+    from nonebot_plugin_wordcloud import schedule_service
+
+    target = TargetQQGroup(group_id=10000)
+    dt = datetime(2023, 12, 31, 23, 59, tzinfo=ZoneInfo("Asia/Shanghai"))
+    await schedule_service.add_schedule(target)
+
+    day_image = BytesIO(b"day")
+    week_image = BytesIO(b"week")
+    month_image = BytesIO(b"month")
+    year_image = BytesIO(b"year")
+
+    mocked_datetime_now = mocker.patch(
+        "nonebot_plugin_wordcloud.schedule.get_datetime_now_with_timezone",
+        return_value=dt,
+    )
+    mocked_get_messages_plain_text = mocker.patch(
+        "nonebot_plugin_wordcloud.schedule.get_messages_plain_text",
+        side_effect=[["day"], ["week"], ["month"], ["year"]],
+    )
+    mocked_get_wordcloud = mocker.patch(
+        "nonebot_plugin_wordcloud.schedule.get_wordcloud",
+        side_effect=[day_image, week_image, month_image, year_image],
+    )
+
+    async with app.test_api() as ctx:
+        bot = ctx.create_bot(base=Bot)
+        should_send_saa(
+            ctx, schedule_summary_message("今日词云总结", day_image), bot, target=target
+        )
+        should_send_saa(
+            ctx, schedule_summary_message("本周词云总结", week_image), bot, target=target
+        )
+        should_send_saa(
+            ctx, schedule_summary_message("本月词云总结", month_image), bot, target=target
+        )
+        should_send_saa(
+            ctx, schedule_summary_message("本年词云总结", year_image), bot, target=target
+        )
+        await schedule_service.run_task()
+
+    day_start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    mocked_datetime_now.assert_called_once_with()
+    mocked_get_messages_plain_text.assert_has_calls(
+        [
+            mocker.call(
+                target=target,
+                types=["message"],
+                time_start=day_start,
+                time_stop=dt,
+                exclude_user_ids=set(),
+            ),
+            mocker.call(
+                target=target,
+                types=["message"],
+                time_start=day_start - timedelta(days=dt.weekday()),
+                time_stop=dt,
+                exclude_user_ids=set(),
+            ),
+            mocker.call(
+                target=target,
+                types=["message"],
+                time_start=day_start.replace(day=1),
+                time_stop=dt,
+                exclude_user_ids=set(),
+            ),
+            mocker.call(
+                target=target,
+                types=["message"],
+                time_start=day_start.replace(month=1, day=1),
+                time_stop=dt,
+                exclude_user_ids=set(),
+            ),
+        ]
+    )
+    mocked_get_wordcloud.assert_has_calls(
+        [
+            mocker.call(["day"], "qq_group-group_id=10000"),
+            mocker.call(["week"], "qq_group-group_id=10000"),
+            mocker.call(["month"], "qq_group-group_id=10000"),
+            mocker.call(["year"], "qq_group-group_id=10000"),
+        ]
+    )
 
 
 async def test_run_task_remove_schedule(app: App):
@@ -353,7 +453,7 @@ async def test_run_task_remove_schedule(app: App):
 
 async def test_run_task_send_error(app: App, mocker: MockerFixture):
     """发送时出现错误"""
-    from nonebot_plugin_saa import Image, MessageFactory, TargetQQGroup
+    from nonebot_plugin_saa import TargetQQGroup
 
     from nonebot_plugin_wordcloud import schedule_service
 
@@ -375,7 +475,7 @@ async def test_run_task_send_error(app: App, mocker: MockerFixture):
         bot = ctx.create_bot(base=Bot)
         should_send_saa(
             ctx,
-            MessageFactory(Image(image)),
+            schedule_summary_message("今日词云总结", image),
             bot,
             target=target,
             exception=Exception("发送失败"),
@@ -383,7 +483,7 @@ async def test_run_task_send_error(app: App, mocker: MockerFixture):
         # 如果第一个群组发送失败，不应该影响第二个群组
         should_send_saa(
             ctx,
-            MessageFactory(Image(image)),
+            schedule_summary_message("今日词云总结", image),
             bot,
             target=target2,
         )

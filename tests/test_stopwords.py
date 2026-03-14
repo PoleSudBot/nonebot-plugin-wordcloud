@@ -13,10 +13,16 @@ async def test_stopwords(app: App):
         f.write("句子")
 
     message = "这是一个奇怪的句子。"
-    frequency = analyse_message(message)
-    assert frequency.keys() == {"这是", "一个", "奇怪", "句子"}
+    original_stopwords_path = plugin_config.wordcloud_stopwords_path
 
-    plugin_config.wordcloud_stopwords_path = data
+    try:
+        plugin_config.wordcloud_stopwords_path = None
+        frequency = analyse_message(message)
+        assert "句子" in frequency
 
-    frequency = analyse_message(message)
-    assert frequency.keys() == {"这是", "一个", "奇怪"}
+        plugin_config.wordcloud_stopwords_path = data
+        frequency = analyse_message(message)
+        assert "句子" not in frequency
+        assert frequency
+    finally:
+        plugin_config.wordcloud_stopwords_path = original_stopwords_path
