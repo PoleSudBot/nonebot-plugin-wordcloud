@@ -1,4 +1,32 @@
+from pathlib import Path
+
 from nonebug import App
+
+
+def test_builtin_stopwords_words():
+    """测试默认停用词表内容"""
+    builtin_stopwords = set(
+        (
+            Path(__file__).resolve().parent.parent
+            / "nonebot_plugin_wordcloud"
+            / "stopword.txt"
+        ).read_text("utf8").splitlines()
+    )
+    assert {
+        "占卜",
+        "jrlp",
+        "还有",
+        "信息",
+        "以为",
+        "其他",
+        "这么",
+        "的话",
+        "反正",
+        "不会",
+        "要是",
+        "天天",
+        "只能",
+    } <= builtin_stopwords
 
 
 async def test_stopwords(app: App):

@@ -42,6 +42,8 @@ class Config(BaseModel):
             )
         if not values.get("wordcloud_stopwords_path"):
             values["wordcloud_stopwords_path"] = Path(__file__).parent / "stopword.txt"
+        if not values.get("wordcloud_userdict_path"):
+            values["wordcloud_userdict_path"] = Path(__file__).parent / "userdict.txt"
 
         default_schedule_time = (
             time.fromisoformat(wordcloud_default_schedule_time)

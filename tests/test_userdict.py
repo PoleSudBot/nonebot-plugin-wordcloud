@@ -1,5 +1,19 @@
+from pathlib import Path
+
 from nonebug import App
 from pytest_mock import MockerFixture
+
+
+def test_builtin_userdict_words():
+    """测试默认自定义词典内容"""
+    builtin_words = set(
+        (
+            Path(__file__).resolve().parent.parent
+            / "nonebot_plugin_wordcloud"
+            / "userdict.txt"
+        ).read_text("utf8").splitlines()
+    )
+    assert {"hyw", "何意味", "小k", "kiyu", "Kiyu"} <= builtin_words
 
 
 async def test_userdict(app: App, mocker: MockerFixture):

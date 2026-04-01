@@ -69,3 +69,15 @@ async def test_default_stopwords_path(app: App):
     assert config.wordcloud_stopwords_path == (
         Path(config_module.__file__).parent / "stopword.txt"
     )
+
+
+async def test_default_userdict_path(app: App):
+    """测试默认自定义词典路径"""
+    from nonebot_plugin_wordcloud import config as config_module
+    from nonebot_plugin_wordcloud.config import Config
+
+    config = type_validate_python(Config, {})
+
+    assert config.wordcloud_userdict_path == (
+        Path(config_module.__file__).parent / "userdict.txt"
+    )
